@@ -6,6 +6,7 @@
 #define ENABLE_OPACITY_CORRECTION 0
 #define ENABLE_LIGHTNING 0
 #define ENABLE_SHADOWING 0
+#define PI 3.1415926535897932384626433832795
 
 in vec3 ray_entry_position;
 
@@ -31,6 +32,8 @@ uniform vec3    light_specular_color;
 uniform float   light_ref_coef;
 
 
+
+
 bool
 inside_volume_bounds(const in vec3 sampling_position)
 {
@@ -47,7 +50,8 @@ get_sample_data(vec3 in_sampling_pos)
 
 }
 
-//calculating the central difference
+// Task 2.1
+// Calculating the central difference
 vec3
 get_gradient(vec3 sample_pos)
 {
@@ -56,21 +60,59 @@ get_gradient(vec3 sample_pos)
     float y = sample_pos.y;
     float z = sample_pos.z;
 
-    float s1_x = get_sample_data(vec3(x+1,y,z));
-    float s2_x = get_sample_data(vec3(x-1,y,z));
-
-    float s1_y = get_sample_data(vec3(x,y+1,z));
-    float s2_y = get_sample_data(vec3(x,y-1,z));
-
-    float s1_z = get_sample_data(vec3(x,y,z+1));
-    float s2_z = get_sample_data(vec3(x,y,z-1));
-
-    float gradient_x = texture(transfer_texture, vec2(s1_x, s1_x)).r - texture(transfer_texture, vec2(s2_x, s2_x)).r;
-    float gradient_y = texture(transfer_texture, vec2(s1_y, s1_y)).r - texture(transfer_texture, vec2(s2_y, s2_y)).r;
-    float gradient_z = texture(transfer_texture, vec2(s1_z, s1_z)).r - texture(transfer_texture, vec2(s2_z, s2_z)).r;
+    float gradient_x = get_sample_data(vec3(x+1,y,z)) - get_sample_data(vec3(x-1,y,z));
+    float gradient_y = get_sample_data(vec3(x,y+1,z)) - get_sample_data(vec3(x,y-1,z));
+    float gradient_z = get_sample_data(vec3(x,y,z+1)) - get_sample_data(vec3(x,y,z-1));
 
     return vec3(gradient_x, gradient_y, gradient_y);
 
+}
+
+// Task 2.2
+// Determine the surface normal for the found intersection point 
+// and calculate a basic illumination for the iso-surface. 
+// 
+// Hint: Color-code and visualize your normals to make sure they are correct. 
+//       A simple phong shading model suffices
+
+vec3 phong_model(vec3 sample_pos)
+{
+    // https://de.wikipedia.org/wiki/Normalenvektor
+    // http://www.cs.utexas.edu/~bajaj/graphics2012/cs354/lectures/lect14.pdf
+    vec3 normal = normalize(get_gradient(sample_pos));
+
+    vec3 light = normalize(sample_pos - light_position);
+    vec3 eye = normalize(camera_location- sample_pos);
+
+    // calculating the refelction vector
+    // https://en.wikipedia.org/wiki/Phong_reflection_model 
+    // https://de.wikipedia.org/wiki/Phong-Beleuchtungsmodell  
+    vec3 reflection = 2 * dot(light,normal)* (normal-light);
+
+
+    // k_d + k_s <=1, k_a <= 1
+    // 
+    // specular reflection constant, the ratio of reflection of the specular term of incoming light,
+    float k_s = 0.1;
+
+    // diffuse reflection constant, the ratio of reflection of the diffuse term of incoming light
+    float k_d = 0.45;
+
+    // ambient reflection constant, the ratio of reflection of the ambient term 
+    // present in all points in the scene rendered
+    float k_a = 0.1;
+
+
+
+    //shininess constant for this material, which is larger for surfaces that are smoother and more mirror-like. 
+    //When this constant is large the specular highlight is small.
+    //
+    float alpha = 50.0;
+
+    vec3 phong_value = light_ambient_color * k_a + light_ref_coef *(k_d * dot(light,normal) 
+                        + k_s  * ((alpha+2)/(2*PI))* pow(dot(reflection,eye),alpha));
+
+    return phong_value;
 }
 
 
@@ -181,15 +223,13 @@ void main()
         
          // first hit
          // 
-         if(color.a >= iso_value){
+         if(s >= iso_value){   
 
             val.r = color.r;
             val.g = color.g;
             val.b = color.b;
             val.a = color.a;
          }
-        
-
 
         // increment the ray sampling position
         sampling_pos += ray_increment;
