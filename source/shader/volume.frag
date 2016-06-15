@@ -60,11 +60,15 @@ get_gradient(vec3 sample_pos)
     float y = sample_pos.y;
     float z = sample_pos.z;
 
-    float gradient_x = get_sample_data(vec3(x+1,y,z)) - get_sample_data(vec3(x-1,y,z));
-    float gradient_y = get_sample_data(vec3(x,y+1,z)) - get_sample_data(vec3(x,y-1,z));
-    float gradient_z = get_sample_data(vec3(x,y,z+1)) - get_sample_data(vec3(x,y,z-1));
+    float toadd_x = max_bounds.x / volume_dimensions.x;
+    float toadd_y = max_bounds.y / volume_dimensions.y;
+    float toadd_z = max_bounds.z / volume_dimensions.z;
 
-    return vec3(gradient_x, gradient_y, gradient_y);
+    float gradient_x = get_sample_data(vec3(x+toadd_x,y,z)) - get_sample_data(vec3(x-toadd_x,y,z));
+    float gradient_y = get_sample_data(vec3(x,y+toadd_y,z)) - get_sample_data(vec3(x,y-toadd_y,z));
+    float gradient_z = get_sample_data(vec3(x,y,z+toadd_z)) - get_sample_data(vec3(x,y,z-toadd_z));
+
+    return vec3(gradient_x, gradient_y, gradient_z);
 
 }
 
@@ -75,14 +79,14 @@ get_gradient(vec3 sample_pos)
 // Hint: Color-code and visualize your normals to make sure they are correct. 
 //       A simple phong shading model suffices
 
-vec3 phong_model(vec3 sample_pos)
+vec4 phong_model(vec3 sample_pos, vec4 color)
 {
     // https://de.wikipedia.org/wiki/Normalenvektor
     // http://www.cs.utexas.edu/~bajaj/graphics2012/cs354/lectures/lect14.pdf
     vec3 normal = normalize(get_gradient(sample_pos));
 
     vec3 light = normalize(sample_pos - light_position);
-    vec3 eye = normalize(camera_location- sample_pos);
+    vec3 eye = normalize(camera_location - sample_pos);
 
     // calculating the refelction vector
     // https://en.wikipedia.org/wiki/Phong_reflection_model 
@@ -109,10 +113,21 @@ vec3 phong_model(vec3 sample_pos)
     //
     float alpha = 50.0;
 
-    vec3 phong_value = light_ambient_color * k_a + light_ref_coef *(k_d * dot(light,normal) 
-                        + k_s  * ((alpha+2)/(2*PI))* pow(dot(reflection,eye),alpha));
 
-    return phong_value;
+    vec3 phong_value = light_ambient_color * k_a + 1.0 *(k_d * dot(light,normal) 
+                        + k_s *((alpha+2)/2*PI) * pow(dot(reflection, eye),alpha));
+
+    //return vec4(normal/2 +0.5,1.0);
+    return vec4(phong_value,1.0);
+}
+
+float binary_search(float s, float iso_value)
+{
+
+    
+
+
+    return s;
 }
 
 
@@ -138,14 +153,20 @@ void main()
     // the traversal loop,
     // termination when the sampling position is outside volume boundarys
     // another termination condition for early ray termination is added
+    
+    float s = get_sample_data(sampling_pos);
+    vec4 color = texture(transfer_texture, vec2(s, s));
+
     while (inside_volume) 
     {      
         // get sample
-        float s = get_sample_data(sampling_pos);
+        s = get_sample_data(sampling_pos);
                 
         // apply the transfer functions to retrieve color and opacity
-        vec4 color = texture(transfer_texture, vec2(s, s));
-           
+        color = texture(transfer_texture, vec2(s, s));
+
+        //color = phong_model(sampling_pos, color);
+
         // this is the example for maximum intensity projection
         max_val.r = max(color.r, max_val.r);
         max_val.g = max(color.g, max_val.g);
@@ -207,6 +228,7 @@ void main()
 #if TASK == 12 || TASK == 13
 
      vec4 val = vec4(0.0, 0.0, 0.0, 0.0);
+     float prev_s = 0.0;
     // the traversal loop,
     // termination when the sampling position is outside volume boundarys
     // another termination condition for early ray termination is added
@@ -223,27 +245,33 @@ void main()
         
          // first hit
          // 
-         if(s >= iso_value){   
+         if (prev_s > s && s < iso_value || prev_s < s && s > iso_value ){ 
 
             val.r = color.r;
             val.g = color.g;
             val.b = color.b;
             val.a = color.a;
+
+            prev_s = s;
+
+            #if TASK == 13 // Binary Search
+            IMPLEMENT;
+            #endif
+            #if ENABLE_LIGHTNING == 1 // Add Shading
+                    val = phong_model(sampling_pos,val);
+            #if ENABLE_SHADOWING == 1 // Add Shadows
+                    IMPLEMENTSHADOW;
+            #endif
+            #endif
+            break;
+          
          }
 
         // increment the ray sampling position
         sampling_pos += ray_increment;
 
 
-#if TASK == 13 // Binary Search
-        IMPLEMENT;
-#endif
-#if ENABLE_LIGHTNING == 1 // Add Shading
-        IMPLEMENTLIGHT;
-#if ENABLE_SHADOWING == 1 // Add Shadows
-        IMPLEMENTSHADOW;
-#endif
-#endif
+
 
         // update the loop termination condition
         inside_volume = inside_volume_bounds(sampling_pos);
