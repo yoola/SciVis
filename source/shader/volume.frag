@@ -79,8 +79,10 @@ get_gradient(vec3 sample_pos)
 // Hint: Color-code and visualize your normals to make sure they are correct. 
 //       A simple phong shading model suffices
 
-vec4 phong_model(vec3 sample_pos, vec4 color)
+vec4
+phong_model(vec3 sample_pos, vec4 color)
 {
+
     // https://de.wikipedia.org/wiki/Normalenvektor
     // http://www.cs.utexas.edu/~bajaj/graphics2012/cs354/lectures/lect14.pdf
     vec3 normal = normalize(get_gradient(sample_pos));
@@ -111,24 +113,94 @@ vec4 phong_model(vec3 sample_pos, vec4 color)
     //shininess constant for this material, which is larger for surfaces that are smoother and more mirror-like. 
     //When this constant is large the specular highlight is small.
     //
-    float alpha = 50.0;
+    float alpha = 16.0;
 
 
     vec3 phong_value = light_ambient_color * k_a + 1.0 *(k_d * dot(light,normal) 
                         + k_s *((alpha+2)/2*PI) * pow(dot(reflection, eye),alpha));
 
-    //return vec4(normal/2 +0.5,1.0);
-    return vec4(phong_value,1.0);
+    return vec4(normal/2 +0.5,1.0);
+    //return vec4(phong_value,1.0);
 }
 
-float binary_search(float s, float iso_value)
-{
+/*vec3
+bin_search(vec3 sampling_pos, vec3 ray_increment)
+{   
 
-    
+
+    int loop = 0;
+    float prev_s = 0;
+    float s = 0;
+    vec4 color;
+   
+    while(abs(s- iso_value) > 0.00001 && loop < 1000){
+
+            ray_increment *= 0.5;
+            loop++;
+            
+            s = get_sample_data(sampling_pos);
+            
+            
+            if(sign(s - iso_value) == 1){
+
+                sampling_pos += ray_increment;
+                prev_s = get_sample_data(sampling_pos - ray_increment);
+                //color = texture(transfer_texture, vec2(prev_s, prev_s));
+                color = vec4(0.5,0.5,0.5,1.0);
 
 
-    return s;
+            }else if(sign(s - iso_value) == -1){
+
+                sampling_pos -= ray_increment;
+                prev_s = get_sample_data(sampling_pos + ray_increment);
+                //color = texture(transfer_texture, vec2(prev_s, prev_s));
+                color = vec4(0.5,0.5,0.5,1.0);
+                
+
+            }else{
+
+                break;
+            }
+
+            
+
+        }
+    return sampling_pos;
+}*/
+
+vec3
+bin_search(vec3 sampling_pos, vec3 ray_increment){
+
+    vec3 prev_sampling = sampling_pos - ray_increment;
+    vec3 min = prev_sampling;
+    vec3 max = sampling_pos + ray_increment;
+    vec3 mid;
+    int loop = 0;
+
+    while(length(max-min) > 0.000001 && loop <1000){
+
+
+        mid = (min+max) *0.5;
+        float s_mid = get_sample_data(mid);
+
+        if(s_mid == iso_value){
+            break;
+        }
+        if(s_mid > iso_value){
+
+            max = mid;
+        }else{
+
+            min = mid;
+        }
+        loop++;
+    }
+
+    return mid;
+
 }
+
+
 
 
 void main()
@@ -229,13 +301,17 @@ void main()
 
      vec4 val = vec4(0.0, 0.0, 0.0, 0.0);
      float prev_s = 0.0;
+     float s = 0.0;
+     //bool shadow = false;
     // the traversal loop,
     // termination when the sampling position is outside volume boundarys
     // another termination condition for early ray termination is added
     while (inside_volume)
     {
         // get sample
-        float s = get_sample_data(sampling_pos);
+        s = get_sample_data(sampling_pos);
+
+        //shadow = false;
 
         // dummy code
         //dst = vec4(light_diffuse_color, 1.0);
@@ -245,7 +321,9 @@ void main()
         
          // first hit
          // 
-         if (prev_s > s && s < iso_value || prev_s < s && s > iso_value ){ 
+         if ( s > iso_value ){ 
+
+            //shadow = true;
 
             val.r = color.r;
             val.g = color.g;
@@ -253,16 +331,32 @@ void main()
             val.a = color.a;
 
             prev_s = s;
+            
+            
 
             #if TASK == 13 // Binary Search
-            IMPLEMENT;
+                
+                sampling_pos = bin_search(sampling_pos, ray_increment);
+                s = get_sample_data(sampling_pos);
+
+                //val = texture(transfer_texture, vec2(s, s));
+                val = vec4(0.5,0.5,0.5,1.0);
             #endif
             #if ENABLE_LIGHTNING == 1 // Add Shading
-                    val = phong_model(sampling_pos,val);
+            
+                val = phong_model(sampling_pos,val);
+        
+                    
+          
+            #endif
+
+           
             #if ENABLE_SHADOWING == 1 // Add Shadows
-                    IMPLEMENTSHADOW;
+            
+                //IMPLEMENT
             #endif
-            #endif
+            
+
             break;
           
          }
@@ -283,11 +377,27 @@ void main()
     // the traversal loop,
     // termination when the sampling position is outside volume boundarys
     // another termination condition for early ray termination is added
-    while (inside_volume)
-    {
+    // 
+    float trans = 1.0;
+    vec3 inten = vec3(0.0, 0.0,0.0);
+    vec4 prev_color = vec4(0.0,0.0,0.0,0.0);
+    float s = 0;
+
+    while (inside_volume && trans >= 0.00001)
+    {   
+        s = get_sample_data(sampling_pos);
+        vec4 color = texture(transfer_texture, vec2(s, s));
+
+      
+        trans = trans * (1 - prev_color.a);
+        inten = inten + trans * color.rgb * color.a;
+
+        prev_color = color;
+        
         // get sample
 #if ENABLE_OPACITY_CORRECTION == 1 // Opacity Correction
-        IMPLEMENT;
+
+        
 #else
         float s = get_sample_data(sampling_pos);
 #endif
@@ -298,15 +408,17 @@ void main()
         sampling_pos += ray_increment;
 
 #if ENABLE_LIGHTNING == 1 // Add Shading
-        IMPLEMENT;
+        //IMPLEMENT;
 #endif
 
         // update the loop termination condition
         inside_volume = inside_volume_bounds(sampling_pos);
     }
+    dst = vec4(inten,1.0);
 #endif 
 
     // return the calculated color value
+    
     FragColor = dst;
 }
 
